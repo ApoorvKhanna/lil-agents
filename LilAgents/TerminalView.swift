@@ -53,6 +53,11 @@ class TerminalView: NSView {
     let inputField = NSTextField()
     var onSendMessage: ((String) -> Void)?
     var onClearRequested: (() -> Void)?
+    var provider: AgentProvider = .claude {
+        didSet {
+            updatePlaceholder()
+        }
+    }
 
     private var currentAssistantText = ""
     private var lastAssistantText = ""
@@ -78,6 +83,14 @@ class TerminalView: NSView {
     }
 
     // MARK: - Setup
+
+    private func updatePlaceholder() {
+        let t = theme
+        inputField.placeholderAttributedString = NSAttributedString(
+            string: provider.inputPlaceholder,
+            attributes: [.font: t.font, .foregroundColor: t.textDim]
+        )
+    }
 
     private func setupViews() {
         let t = theme
@@ -136,11 +149,8 @@ class TerminalView: NSView {
         paddedCell.isBezeled = false
         paddedCell.fieldBackgroundColor = nil
         paddedCell.fieldCornerRadius = 0
-        paddedCell.placeholderAttributedString = NSAttributedString(
-            string: AgentProvider.current.inputPlaceholder,
-            attributes: [.font: t.font, .foregroundColor: t.textDim]
-        )
         inputField.cell = paddedCell
+        updatePlaceholder()
         inputField.target = self
         inputField.action = #selector(inputSubmitted)
         addSubview(inputField)

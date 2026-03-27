@@ -3,6 +3,16 @@ import AppKit
 
 class WalkerCharacter {
     let videoName: String
+    let name: String
+    var provider: AgentProvider {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "\(name)Provider") ?? "claude"
+            return AgentProvider(rawValue: raw) ?? .claude
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "\(name)Provider")
+        }
+    }
     var window: NSWindow!
     var playerLayer: AVPlayerLayer!
     var queuePlayer: AVQueuePlayer!
@@ -59,8 +69,9 @@ class WalkerCharacter {
     private var wasPopoverVisibleBeforeEnvironmentHide = false
     private var wasBubbleVisibleBeforeEnvironmentHide = false
 
-    init(videoName: String) {
+    init(videoName: String, name: String) {
         self.videoName = videoName
+        self.name = name
     }
 
     // MARK: - Setup
@@ -258,7 +269,7 @@ class WalkerCharacter {
         hideBubble()
 
         if session == nil {
-            let newSession = AgentProvider.current.createSession()
+            let newSession = provider.createSession()
             session = newSession
             wireSession(newSession)
             newSession.start()
@@ -375,7 +386,7 @@ class WalkerCharacter {
         titleBar.layer?.backgroundColor = t.titleBarBg.cgColor
         container.addSubview(titleBar)
 
-        let titleLabel = NSTextField(labelWithString: t.titleString)
+        let titleLabel = NSTextField(labelWithString: t.titleString(for: provider))
         titleLabel.font = t.titleFont
         titleLabel.textColor = t.titleText
         titleLabel.frame = NSRect(x: 12, y: 6, width: popoverWidth - 80, height: 16)
@@ -400,6 +411,7 @@ class WalkerCharacter {
         let terminal = TerminalView(frame: NSRect(x: 0, y: 0, width: popoverWidth, height: popoverHeight - 29))
         terminal.characterColor = characterColor
         terminal.themeOverride = themeOverride
+        terminal.provider = provider
         terminal.autoresizingMask = [.width, .height]
         terminal.onSendMessage = { [weak self] message in
             self?.session?.send(message: message)
@@ -414,7 +426,7 @@ class WalkerCharacter {
         terminalView = terminal
     }
 
-    private func wireSession(_ session: any AgentSession, providerName: String = AgentProvider.current.displayName) {
+    private func wireSession(_ session: any AgentSession) {
         session.onText = { [weak self] text in
             self?.currentStreamingText += text
             self?.terminalView?.appendStreamingText(text)
@@ -441,8 +453,9 @@ class WalkerCharacter {
         }
 
         session.onProcessExit = { [weak self] in
-            self?.terminalView?.endStreaming()
-            self?.terminalView?.appendError("\(providerName) session ended.")
+            guard let self = self else { return }
+            self.terminalView?.endStreaming()
+            self.terminalView?.appendError("\(self.provider.displayName) session ended.")
         }
     }
 
