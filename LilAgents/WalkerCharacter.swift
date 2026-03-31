@@ -526,9 +526,8 @@ class WalkerCharacter {
             return
         }
 
-        if isAgentBusy && !isIdleForPopover {
-            let now = CACurrentMediaTime()
-            if currentSignQuote.isEmpty || now - lastSignQuoteUpdate > 60.0 {
+        if !isIdleForPopover {
+            if currentSignQuote.isEmpty || now - lastSignQuoteUpdate > 30.0 {
                 var next = Self.signBoardQuotes.randomElement() ?? "..."
                 while next == currentSignQuote && Self.signBoardQuotes.count > 1 {
                     next = Self.signBoardQuotes.randomElement() ?? "..."
@@ -780,11 +779,6 @@ class WalkerCharacter {
     private func hideSignBoard() {
         if signBoardWindow?.isVisible ?? false {
             signBoardWindow?.orderOut(nil)
-        }
-        if !isAgentBusy {
-            currentSignQuote = ""
-            lastSignQuoteUpdate = 0
-            signBoardWindow = nil
         }
     }
 
