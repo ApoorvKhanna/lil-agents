@@ -690,43 +690,32 @@ class WalkerCharacter {
 
     // MARK: - Sign Board
 
-    private static let signBoardQuotes: [String] = [
-        "Men's public restrooms are laid out all wrong. It should be urinal, stall, urinal, stall instead of urinal, urinal, urinal, stall, stall.",
-        "The 'richest people' list is actually the 'legally richest people' list, which is only close to the actual richest people list.",
-        "When you eat at home with your partner, it's weird to eat different entrees. But at a restaurant, it's weird to eat the same one.",
-        "Temperature can reach trillions of degrees, meaning we actually live extremely close to absolute zero.",
-        "If radio was invented today it would be controlled by four companies and locked behind a paywall.",
-        "Waking up when your body is done sleeping, not when a machine tells you to, is a profound privilege.",
-        "You don't realize how much of your personality is built around avoiding discomfort until you try to change.",
-        "There are people out there you haven't met yet who will love you.",
-        "Babies being so helpless is a real flex for humans as apex predators.",
-        "If you lose a leg, your BMI goes down. If you lose another leg, your BMI goes up.",
-        "We just automatically assume that eggs in recipes means chicken eggs.",
-        "Five stars being the default leaves no room to reward people who go the extra mile.",
-        "Superman must have to go to sleep every night hearing the cries of people begging for his help.",
-        "If puberty is confusing for humans, metamorphosis must be extremely confusing for caterpillars.",
-        "Social media should have a 'This Is AI' button for post readers.",
-        "An alien invasion wouldn't unite humanity; nations would be selling each other out at the first opportunity.",
-        "If the 'use it or lose it' theory of neuroscience is correct, we're going to have an explosion of AI-induced Alzheimers.",
-        "The universe has used effectively 0% of its lifetime. We're living in its earliest, most active era.",
-        "Everyone has a black ancestor; not everyone has a white ancestor.",
-        "Multiple choice tests having a 'don't know' option that gives a fractional point would reward honesty.",
-        "Superman could hear all the sex his parents had in great detail before learning to control his powers.",
-        "Phone cameras need a 'junk photo' setting for parking spots, menus, QR codes, and other throwaway shots.",
-        "If you didn't watch it air, you'd never be able to catch up with the Truman Show.",
-        "The first 2/3 years of the Truman Show must've been really boring to watch.",
-        "The invention of clothes likely helped boost human birthrates by inadvertently increasing sexual arousal.",
-        "In the Harry Potter Universe, technically anybody could legally explore the body of anyone else, so long as they had a single strand of that person's hair and some Polyjuice Potion.",
-        "If you sleep 5 hours per night and die at age 75, you'll have spent just as many years awake as someone who sleeps 8 hours and dies at age 89.",
-        "If you are an identical twin, there is a non-zero chance your parents got you confused for your sibling as an infant, so you aren't who you think you are.",
-        "I bet the person whose Social Security number is 420-69-8008 wishes they could tell everyone what it is.",
-        "Aliens wouldn't invade earth to enslave humanity or for resources. They can travel the galaxy — they'll have all of space and its resources already.",
-        "There's almost certainly a demographic of young people developing specific fetishes for the glitchy artifacts and malformed anatomy in AI-generated porn.",
-        "It is likely that if inbreeding wasn't a problem genetically, it would not be taboo.",
-        "People who use em dashes regularly in their writing might be the most underrated victims of the ChatGPT/AI boom.",
-        "You'd think evolution would have stopped snoring long ago: being loud at night while sleeping seems like a bad survival strategy.",
-        "What would have been relegated to shock sites 15 years ago is commonplace on social media today.",
-    ]
+    private static let signBoardQuotes: [String] = {
+        if let url = Bundle.main.url(forResource: "quotes", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let quotes = try? JSONDecoder().decode([String].self, from: data),
+           !quotes.isEmpty {
+            return quotes
+        }
+        return [
+            "Men's public restrooms are laid out all wrong. It should be urinal, stall, urinal, stall instead of urinal, urinal, urinal, stall, stall.",
+            "The 'richest people' list is actually the 'legally richest people' list, which is only close to the actual richest people list.",
+            "When you eat at home with your partner, it's weird to eat different entrees. But at a restaurant, it's weird to eat the same one.",
+            "Temperature can reach trillions of degrees, meaning we actually live extremely close to absolute zero.",
+            "Waking up when your body is done sleeping, not when a machine tells you to, is a profound privilege.",
+            "You don't realize how much of your personality is built around avoiding discomfort until you try to change.",
+            "There are people out there you haven't met yet who will love you.",
+            "Babies being so helpless is a real flex for humans as apex predators.",
+            "We just automatically assume that eggs in recipes means chicken eggs.",
+            "Five stars being the default leaves no room to reward people who go the extra mile.",
+            "Superman must have to go to sleep every night hearing the cries of people begging for his help.",
+            "If puberty is confusing for humans, metamorphosis must be extremely confusing for caterpillars.",
+            "Everyone has a black ancestor; not everyone has a white ancestor.",
+            "People who use em dashes regularly in their writing might be the most underrated victims of the ChatGPT/AI boom.",
+            "You'd think evolution would have stopped snoring long ago: being loud at night while sleeping seems like a bad survival strategy.",
+            "What would have been relegated to shock sites 15 years ago is commonplace on social media today.",
+        ]
+    }()
 
     private func showSignBoard(quote: String) {
         let maxW: CGFloat = 230
