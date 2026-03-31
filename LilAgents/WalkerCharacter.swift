@@ -716,6 +716,16 @@ class WalkerCharacter {
         "If you didn't watch it air, you'd never be able to catch up with the Truman Show.",
         "The first 2/3 years of the Truman Show must've been really boring to watch.",
         "The invention of clothes likely helped boost human birthrates by inadvertently increasing sexual arousal.",
+        "In the Harry Potter Universe, technically anybody could legally explore the body of anyone else, so long as they had a single strand of that person's hair and some Polyjuice Potion.",
+        "If you sleep 5 hours per night and die at age 75, you'll have spent just as many years awake as someone who sleeps 8 hours and dies at age 89.",
+        "If you are an identical twin, there is a non-zero chance your parents got you confused for your sibling as an infant, so you aren't who you think you are.",
+        "I bet the person whose Social Security number is 420-69-8008 wishes they could tell everyone what it is.",
+        "Aliens wouldn't invade earth to enslave humanity or for resources. They can travel the galaxy — they'll have all of space and its resources already.",
+        "There's almost certainly a demographic of young people developing specific fetishes for the glitchy artifacts and malformed anatomy in AI-generated porn.",
+        "It is likely that if inbreeding wasn't a problem genetically, it would not be taboo.",
+        "People who use em dashes regularly in their writing might be the most underrated victims of the ChatGPT/AI boom.",
+        "You'd think evolution would have stopped snoring long ago: being loud at night while sleeping seems like a bad survival strategy.",
+        "What would have been relegated to shock sites 15 years ago is commonplace on social media today.",
     ]
 
     private func showSignBoard(quote: String) {
