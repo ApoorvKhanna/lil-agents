@@ -57,6 +57,8 @@ class WalkerCharacter {
     var signBoardWindow: NSWindow?
     private var currentSignQuote: String = ""
     private var lastSignQuoteUpdate: CFTimeInterval = 0
+    private var shuffledQuotes: [String] = WalkerCharacter.signBoardQuotes.shuffled()
+    private var quoteIndex: Int = 0
     private(set) var isManuallyVisible = true
     private var environmentHiddenAt: CFTimeInterval?
     private var wasPopoverVisibleBeforeEnvironmentHide = false
@@ -510,7 +512,8 @@ class WalkerCharacter {
         let now = CACurrentMediaTime()
 
         if showingCompletion {
-            hideSignBoard()
+            signBoardWindow?.orderOut(nil)
+            signBoardWindow = nil
             currentSignQuote = ""
             if now >= completionBubbleExpiry {
                 showingCompletion = false
@@ -528,12 +531,14 @@ class WalkerCharacter {
 
         if !isIdleForPopover {
             if currentSignQuote.isEmpty || now - lastSignQuoteUpdate > 30.0 {
-                var next = Self.signBoardQuotes.randomElement() ?? "..."
-                while next == currentSignQuote && Self.signBoardQuotes.count > 1 {
-                    next = Self.signBoardQuotes.randomElement() ?? "..."
+                currentSignQuote = shuffledQuotes[quoteIndex % shuffledQuotes.count]
+                quoteIndex += 1
+                if quoteIndex >= shuffledQuotes.count {
+                    shuffledQuotes.shuffle()
+                    quoteIndex = 0
                 }
-                currentSignQuote = next
                 lastSignQuoteUpdate = now
+                signBoardWindow?.orderOut(nil)
                 signBoardWindow = nil
             }
             showSignBoard(quote: currentSignQuote)
