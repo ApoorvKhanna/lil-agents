@@ -124,6 +124,12 @@ class LilAgentsController {
 
         // Small fudge factor for dock edge padding
         dockWidth *= 1.1
+
+        // Fallback: if dock detection returned nothing useful, span most of the screen
+        if dockWidth < 100 {
+            dockWidth = screenWidth * 0.85
+        }
+
         let dockX = (screenWidth - dockWidth) / 2.0
         return (dockX, dockWidth)
     }
@@ -151,6 +157,9 @@ class LilAgentsController {
                                        Unmanaged.passUnretained(self).toOpaque())
         CVDisplayLinkStart(displayLink)
     }
+
+    private(set) var isClaudeCodeBusy: Bool = false
+    private var lastBusyCheckTime: CFTimeInterval = 0
 
     var activeScreen: NSScreen? {
         if pinnedScreenIndex >= 0, pinnedScreenIndex < NSScreen.screens.count {
@@ -208,6 +217,12 @@ class LilAgentsController {
         dockTopY = screen.visibleFrame.origin.y
 
         updateDebugLine(dockX: dockX, dockWidth: dockWidth, dockTopY: dockTopY)
+
+        let now2 = CACurrentMediaTime()
+        if now2 - lastBusyCheckTime > 1.0 {
+            lastBusyCheckTime = now2
+            isClaudeCodeBusy = FileManager.default.fileExists(atPath: "/tmp/.claude-busy")
+        }
 
         let activeChars = characters.filter { $0.window.isVisible && $0.isManuallyVisible }
 

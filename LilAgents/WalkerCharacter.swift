@@ -52,8 +52,11 @@ class WalkerCharacter {
     var currentStreamingText = ""
     weak var controller: LilAgentsController?
     var themeOverride: PopoverTheme?
-    var isAgentBusy: Bool { session?.isBusy ?? false }
+    var isAgentBusy: Bool { session?.isBusy ?? false || controller?.isClaudeCodeBusy ?? false }
     var thinkingBubbleWindow: NSWindow?
+    var signBoardWindow: NSWindow?
+    private var currentSignQuote: String = ""
+    private var lastSignQuoteUpdate: CFTimeInterval = 0
     private(set) var isManuallyVisible = true
     private var environmentHiddenAt: CFTimeInterval?
     private var wasPopoverVisibleBeforeEnvironmentHide = false
@@ -122,6 +125,7 @@ class WalkerCharacter {
             window.orderOut(nil)
             popoverWindow?.orderOut(nil)
             thinkingBubbleWindow?.orderOut(nil)
+            signBoardWindow?.orderOut(nil)
         }
     }
 
@@ -136,6 +140,7 @@ class WalkerCharacter {
         window.orderOut(nil)
         popoverWindow?.orderOut(nil)
         thinkingBubbleWindow?.orderOut(nil)
+        signBoardWindow?.orderOut(nil)
     }
 
     func showForEnvironmentIfNeeded() {
@@ -505,6 +510,8 @@ class WalkerCharacter {
         let now = CACurrentMediaTime()
 
         if showingCompletion {
+            hideSignBoard()
+            currentSignQuote = ""
             if now >= completionBubbleExpiry {
                 showingCompletion = false
                 hideBubble()
@@ -520,15 +527,24 @@ class WalkerCharacter {
         }
 
         if isAgentBusy && !isIdleForPopover {
-            let oldPhrase = currentPhrase
-            updateThinkingPhrase()
-            if currentPhrase != oldPhrase && !oldPhrase.isEmpty && !phraseAnimating {
-                animatePhraseChange(to: currentPhrase, isCompletion: false)
-            } else if !phraseAnimating {
-                showBubble(text: currentPhrase, isCompletion: false)
+            let now = CACurrentMediaTime()
+            if currentSignQuote.isEmpty || now - lastSignQuoteUpdate > 60.0 {
+                var next = Self.signBoardQuotes.randomElement() ?? "..."
+                while next == currentSignQuote && Self.signBoardQuotes.count > 1 {
+                    next = Self.signBoardQuotes.randomElement() ?? "..."
+                }
+                currentSignQuote = next
+                lastSignQuoteUpdate = now
+                signBoardWindow = nil
             }
-        } else if !showingCompletion {
+            showSignBoard(quote: currentSignQuote)
+            updateSignBoardPosition()
             hideBubble()
+        } else {
+            hideSignBoard()
+            if !showingCompletion {
+                hideBubble()
+            }
         }
     }
 
@@ -666,6 +682,119 @@ class WalkerCharacter {
 
         win.contentView = container
         thinkingBubbleWindow = win
+    }
+
+    // MARK: - Sign Board
+
+    private static let signBoardQuotes: [String] = [
+        "Men's public restrooms are laid out all wrong. It should be urinal, stall, urinal, stall instead of urinal, urinal, urinal, stall, stall.",
+        "The 'richest people' list is actually the 'legally richest people' list, which is only close to the actual richest people list.",
+        "When you eat at home with your partner, it's weird to eat different entrees. But at a restaurant, it's weird to eat the same one.",
+        "Temperature can reach trillions of degrees, meaning we actually live extremely close to absolute zero.",
+        "If radio was invented today it would be controlled by four companies and locked behind a paywall.",
+        "Waking up when your body is done sleeping, not when a machine tells you to, is a profound privilege.",
+        "You don't realize how much of your personality is built around avoiding discomfort until you try to change.",
+        "There are people out there you haven't met yet who will love you.",
+        "Babies being so helpless is a real flex for humans as apex predators.",
+        "If you lose a leg, your BMI goes down. If you lose another leg, your BMI goes up.",
+        "We just automatically assume that eggs in recipes means chicken eggs.",
+        "Five stars being the default leaves no room to reward people who go the extra mile.",
+        "Superman must have to go to sleep every night hearing the cries of people begging for his help.",
+        "If puberty is confusing for humans, metamorphosis must be extremely confusing for caterpillars.",
+        "Social media should have a 'This Is AI' button for post readers.",
+        "An alien invasion wouldn't unite humanity; nations would be selling each other out at the first opportunity.",
+        "If the 'use it or lose it' theory of neuroscience is correct, we're going to have an explosion of AI-induced Alzheimers.",
+        "The universe has used effectively 0% of its lifetime. We're living in its earliest, most active era.",
+        "Everyone has a black ancestor; not everyone has a white ancestor.",
+        "Multiple choice tests having a 'don't know' option that gives a fractional point would reward honesty.",
+        "Superman could hear all the sex his parents had in great detail before learning to control his powers.",
+        "Phone cameras need a 'junk photo' setting for parking spots, menus, QR codes, and other throwaway shots.",
+        "If you didn't watch it air, you'd never be able to catch up with the Truman Show.",
+        "The first 2/3 years of the Truman Show must've been really boring to watch.",
+        "The invention of clothes likely helped boost human birthrates by inadvertently increasing sexual arousal.",
+    ]
+
+    private func showSignBoard(quote: String) {
+        let maxW: CGFloat = 230
+        let hPad: CGFloat = 12
+        let vPad: CGFloat = 10
+        let textW = maxW - hPad * 2
+        let font = NSFont.systemFont(ofSize: 10.5, weight: .regular)
+
+        let textRect = (quote as NSString).boundingRect(
+            with: CGSize(width: textW, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading, .usesDeviceMetrics],
+            attributes: [.font: font]
+        )
+        let textH = ceil(textRect.height) + 16  // buffer for line spacing and descenders
+        let boardW = maxW
+        let boardH = textH + vPad * 2
+
+        let charFrame = window.frame
+        let x = charFrame.midX - boardW / 2
+        let y = charFrame.origin.y + charFrame.height * 0.88
+
+        if signBoardWindow == nil {
+            let win = NSWindow(
+                contentRect: CGRect(x: x, y: y, width: boardW, height: boardH),
+                styleMask: .borderless, backing: .buffered, defer: false
+            )
+            win.isOpaque = false
+            win.backgroundColor = .clear
+            win.hasShadow = true
+            win.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 5)
+            win.ignoresMouseEvents = true
+            win.collectionBehavior = [.moveToActiveSpace, .stationary]
+
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: boardW, height: boardH))
+            container.wantsLayer = true
+            container.layer?.backgroundColor = NSColor(red: 0.96, green: 0.93, blue: 0.82, alpha: 0.97).cgColor
+            container.layer?.cornerRadius = 7
+            container.layer?.borderWidth = 2
+            container.layer?.borderColor = NSColor(red: 0.38, green: 0.27, blue: 0.15, alpha: 0.85).cgColor
+
+            let label = NSTextField(wrappingLabelWithString: quote)
+            label.font = font
+            label.textColor = NSColor(red: 0.12, green: 0.09, blue: 0.06, alpha: 1.0)
+            label.alignment = .center
+            label.drawsBackground = false
+            label.isBordered = false
+            label.isEditable = false
+            label.maximumNumberOfLines = 0
+            label.frame = NSRect(x: hPad, y: vPad, width: textW, height: textH)
+            label.tag = 200
+            container.addSubview(label)
+
+            win.contentView = container
+            signBoardWindow = win
+        } else {
+            signBoardWindow?.setFrame(CGRect(x: x, y: y, width: boardW, height: boardH), display: false)
+        }
+
+        if !(signBoardWindow?.isVisible ?? false) {
+            signBoardWindow?.alphaValue = 1.0
+            signBoardWindow?.orderFrontRegardless()
+        }
+    }
+
+    private func hideSignBoard() {
+        if signBoardWindow?.isVisible ?? false {
+            signBoardWindow?.orderOut(nil)
+        }
+        if !isAgentBusy {
+            currentSignQuote = ""
+            lastSignQuoteUpdate = 0
+            signBoardWindow = nil
+        }
+    }
+
+    private func updateSignBoardPosition() {
+        guard let win = signBoardWindow, win.isVisible else { return }
+        let charFrame = window.frame
+        let boardW = win.frame.width
+        let x = charFrame.midX - boardW / 2
+        let y = charFrame.origin.y + charFrame.height * 0.88
+        win.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     // MARK: - Completion Sound
