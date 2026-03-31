@@ -1,5 +1,47 @@
 import AppKit
 
+// MARK: - Character config pool
+// To add a new character:
+//   1. Drop a walk-<name>.mov into LilAgents/ and add it to the Xcode target
+//   2. Add an entry below with its timing params tuned to the video
+
+struct CharacterConfig {
+    let videoName: String
+    let accelStart: CFTimeInterval
+    let fullSpeedStart: CFTimeInterval
+    let decelStart: CFTimeInterval
+    let walkStop: CFTimeInterval
+    let walkAmountRange: ClosedRange<CGFloat>
+    let yOffset: CGFloat
+    let flipXOffset: CGFloat
+    let color: NSColor
+}
+
+private let characterPool: [CharacterConfig] = [
+    CharacterConfig(
+        videoName: "walk-bruce-01",
+        accelStart: 3.0, fullSpeedStart: 3.75, decelStart: 8.0, walkStop: 8.5,
+        walkAmountRange: 0.4...0.65,
+        yOffset: -3, flipXOffset: 0,
+        color: NSColor(red: 0.4, green: 0.72, blue: 0.55, alpha: 1.0)
+    ),
+    CharacterConfig(
+        videoName: "walk-jazz-01",
+        accelStart: 3.9, fullSpeedStart: 4.5, decelStart: 8.0, walkStop: 8.75,
+        walkAmountRange: 0.35...0.6,
+        yOffset: -7, flipXOffset: -9,
+        color: NSColor(red: 1.0, green: 0.4, blue: 0.0, alpha: 1.0)
+    ),
+    // Add more characters here as you create their videos, e.g.:
+    // CharacterConfig(
+    //     videoName: "walk-dog-01",
+    //     accelStart: 2.5, fullSpeedStart: 3.2, decelStart: 7.8, walkStop: 8.4,
+    //     walkAmountRange: 0.3...0.55,
+    //     yOffset: -5, flipXOffset: 0,
+    //     color: NSColor(red: 0.7, green: 0.5, blue: 0.3, alpha: 1.0)
+    // ),
+]
+
 class LilAgentsController {
     var characters: [WalkerCharacter] = []
     private var displayLink: CVDisplayLink?
@@ -9,37 +51,33 @@ class LilAgentsController {
     private var isHiddenForEnvironment = false
 
     func start() {
-        let char1 = WalkerCharacter(videoName: "walk-bruce-01")
-        char1.accelStart = 3.0
-        char1.fullSpeedStart = 3.75
-        char1.decelStart = 8.0
-        char1.walkStop = 8.5
-        char1.walkAmountRange = 0.4...0.65
+        // Pick 2 random configs (without repetition) from the pool
+        var pool = characterPool.filter {
+            Bundle.main.url(forResource: $0.videoName, withExtension: "mov") != nil
+        }
+        pool.shuffle()
+        let configs = Array(pool.prefix(2))
 
-        let char2 = WalkerCharacter(videoName: "walk-jazz-01")
-        char2.accelStart = 3.9
-        char2.fullSpeedStart = 4.5
-        char2.decelStart = 8.0
-        char2.walkStop = 8.75
-        char2.walkAmountRange = 0.35...0.6
-        char1.yOffset = -3
-        char2.yOffset = -7
-        char1.characterColor = NSColor(red: 0.4, green: 0.72, blue: 0.55, alpha: 1.0)
-        char2.characterColor = NSColor(red: 1.0, green: 0.4, blue: 0.0, alpha: 1.0)
+        let startPositions: [CGFloat] = [0.3, 0.7]
+        let startDelays: [ClosedRange<Double>] = [0.5...2.0, 8.0...14.0]
 
-        char1.flipXOffset = 0
-        char2.flipXOffset = -9
+        let chars: [WalkerCharacter] = configs.enumerated().map { i, cfg in
+            let c = WalkerCharacter(videoName: cfg.videoName)
+            c.accelStart = cfg.accelStart
+            c.fullSpeedStart = cfg.fullSpeedStart
+            c.decelStart = cfg.decelStart
+            c.walkStop = cfg.walkStop
+            c.walkAmountRange = cfg.walkAmountRange
+            c.yOffset = cfg.yOffset
+            c.flipXOffset = cfg.flipXOffset
+            c.characterColor = cfg.color
+            c.positionProgress = startPositions[i]
+            c.pauseEndTime = CACurrentMediaTime() + Double.random(in: startDelays[i])
+            c.setup()
+            return c
+        }
 
-        char1.positionProgress = 0.3
-        char2.positionProgress = 0.7
-
-        char1.pauseEndTime = CACurrentMediaTime() + Double.random(in: 0.5...2.0)
-        char2.pauseEndTime = CACurrentMediaTime() + Double.random(in: 8.0...14.0)
-
-        char1.setup()
-        char2.setup()
-
-        characters = [char1, char2]
+        characters = chars
         characters.forEach { $0.controller = self }
 
         setupDebugLine()
