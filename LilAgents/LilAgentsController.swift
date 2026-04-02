@@ -9,14 +9,21 @@ class LilAgentsController {
     private var isHiddenForEnvironment = false
 
     func start() {
-        let char1 = WalkerCharacter(videoName: "walk-bruce-01")
+        let char1 = WalkerCharacter(videoName: "walk-bruce-01", name: "Bruce")
+        let char2 = WalkerCharacter(videoName: "walk-jazz-01", name: "Jazz")
+
+        // First run defaults
+        if !UserDefaults.standard.bool(forKey: Self.onboardingKey) {
+            char1.provider = .claude
+            char2.provider = .codex
+        }
+
         char1.accelStart = 3.0
         char1.fullSpeedStart = 3.75
         char1.decelStart = 8.0
         char1.walkStop = 8.5
         char1.walkAmountRange = 0.4...0.65
 
-        let char2 = WalkerCharacter(videoName: "walk-jazz-01")
         char2.accelStart = 3.9
         char2.fullSpeedStart = 4.5
         char2.decelStart = 8.0
@@ -93,14 +100,17 @@ class LilAgentsController {
     private func getDockIconArea(screenWidth: CGFloat) -> (x: CGFloat, width: CGFloat) {
         let dockDefaults = UserDefaults(suiteName: "com.apple.dock")
         let tileSize = CGFloat(dockDefaults?.double(forKey: "tilesize") ?? 48)
-        // Each dock slot is the icon + padding. The padding scales with tile size.
-        // At default 48pt: slot ≈ 58pt. At 37pt: slot ≈ 47pt. Roughly tileSize * 1.25.
         let slotWidth = tileSize * 1.25
 
-        let persistentApps = dockDefaults?.array(forKey: "persistent-apps")?.count ?? 0
-        let persistentOthers = dockDefaults?.array(forKey: "persistent-others")?.count ?? 0
+        var persistentApps = dockDefaults?.array(forKey: "persistent-apps")?.count ?? 0
+        var persistentOthers = dockDefaults?.array(forKey: "persistent-others")?.count ?? 0
 
-        // Only count recent apps if show-recents is enabled
+        // Fallback for defaults reading issues
+        if persistentApps == 0 && persistentOthers == 0 {
+            persistentApps = 5
+            persistentOthers = 3
+        }
+
         let showRecents = dockDefaults?.bool(forKey: "show-recents") ?? true
         let recentApps = showRecents ? (dockDefaults?.array(forKey: "recent-apps")?.count ?? 0) : 0
         let totalIcons = persistentApps + persistentOthers + recentApps
@@ -108,22 +118,13 @@ class LilAgentsController {
         var dividers = 0
         if persistentApps > 0 && (persistentOthers > 0 || recentApps > 0) { dividers += 1 }
         if persistentOthers > 0 && recentApps > 0 { dividers += 1 }
-        // show-recents adds its own divider
         if showRecents && recentApps > 0 { dividers += 1 }
 
         let dividerWidth: CGFloat = 12.0
         var dockWidth = slotWidth * CGFloat(totalIcons) + CGFloat(dividers) * dividerWidth
 
-        let magnificationEnabled = dockDefaults?.bool(forKey: "magnification") ?? false
-        if magnificationEnabled,
-           let largeSize = dockDefaults?.object(forKey: "largesize") as? CGFloat {
-            // Magnification only affects the hovered area; at rest the dock is normal size.
-            // Don't inflate the width — characters should stay within the at-rest bounds.
-            _ = largeSize
-        }
-
         // Small fudge factor for dock edge padding
-        dockWidth *= 1.1
+        dockWidth *= 1.15
         let dockX = (screenWidth - dockWidth) / 2.0
         return (dockX, dockWidth)
     }
@@ -131,6 +132,19 @@ class LilAgentsController {
     private func dockAutohideEnabled() -> Bool {
         let dockDefaults = UserDefaults(suiteName: "com.apple.dock")
         return dockDefaults?.bool(forKey: "autohide") ?? false
+    }
+
+    private func shouldShowCharacters(on screen: NSScreen) -> Bool {
+        // User explicitly pinned to this screen — always show
+        if pinnedScreenIndex >= 0, pinnedScreenIndex < NSScreen.screens.count {
+            return true
+        }
+        if screenHasDock(screen) {
+            return true
+        }
+
+        let menuBarVisible = screen.visibleFrame.maxY < screen.frame.maxY
+        return dockAutohideEnabled() && menuBarVisible
     }
 
     // MARK: - Display Link
@@ -175,22 +189,6 @@ class LilAgentsController {
     /// On screens without the dock, visibleFrame.origin.y == frame.origin.y
     private func screenHasDock(_ screen: NSScreen) -> Bool {
         return screen.visibleFrame.origin.y > screen.frame.origin.y
-    }
-
-    private func shouldShowCharacters(on screen: NSScreen) -> Bool {
-        // User explicitly pinned to this screen — always show
-        if pinnedScreenIndex >= 0, pinnedScreenIndex < NSScreen.screens.count {
-            return true
-        }
-        if screenHasDock(screen) {
-            return true
-        }
-
-        // With dock auto-hide enabled on the active desktop, the dock can still be
-        // present even though visibleFrame starts at the screen origin. In fullscreen
-        // spaces, both the dock and menu bar are absent, so visibleFrame matches frame.
-        let menuBarVisible = screen.visibleFrame.maxY < screen.frame.maxY
-        return dockAutohideEnabled() && menuBarVisible
     }
 
     @discardableResult

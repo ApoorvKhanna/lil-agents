@@ -5,6 +5,7 @@ class GeminiSession: AgentSession {
     private var outputPipe: Pipe?
     private var errorPipe: Pipe?
     private var lineBuffer = ""
+    private var currentResponseText = ""
     private(set) var isRunning = false
     private(set) var isBusy = false
     private var isFirstTurn = true
@@ -52,6 +53,7 @@ class GeminiSession: AgentSession {
     func send(message: String) {
         guard isRunning, let binaryPath = Self.binaryPath else { return }
         isBusy = true
+        currentResponseText = ""
         history.append(AgentMessage(role: .user, text: message))
         lineBuffer = ""
 
@@ -84,14 +86,25 @@ class GeminiSession: AgentSession {
                 guard let self = self else { return }
                 self.process = nil
 
+                // Process any remaining buffered content
+                if !self.lineBuffer.isEmpty {
+                    self.parseLine(self.lineBuffer)
+                    self.lineBuffer = ""
+                }
+
                 let text = collectedText.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !text.isEmpty && self.isBusy {
                     // If we got text that wasn't streamed yet (non-streaming fallback)
                     let alreadyStreamed = self.history.last?.role == .assistant
-                    if !alreadyStreamed {
+                    if !alreadyStreamed && self.currentResponseText.isEmpty {
                         self.history.append(AgentMessage(role: .assistant, text: text))
                         self.onText?(text)
                     }
+                }
+
+                // Save final response text if we tracked it
+                if !self.currentResponseText.isEmpty && self.history.last?.role != .assistant {
+                    self.history.append(AgentMessage(role: .assistant, text: self.currentResponseText))
                 }
 
                 if self.isBusy {
@@ -128,7 +141,9 @@ class GeminiSession: AgentSession {
                                       trimmed.hasPrefix("⠴") || trimmed.hasPrefix("⠦") ||
                                       trimmed.hasPrefix("⠧") || trimmed.hasPrefix("⠇") ||
                                       trimmed.hasPrefix("⠏") || trimmed.isEmpty
-                if !isProgressNoise {
+                // Also ignore keytar errors which are common in some environments
+                let isKeytarError = text.contains("Keychain initialization encountered an error")
+                if !isProgressNoise && !isKeytarError {
                     DispatchQueue.main.async {
                         self?.onError?(text)
                     }
@@ -188,6 +203,7 @@ class GeminiSession: AgentSession {
         // Plain text fallback: stream each line as assistant text
         if !didReceiveJsonLine {
             let text = line + "\n"
+            currentResponseText += text
             onText?(text)
         }
     }
@@ -200,27 +216,45 @@ class GeminiSession: AgentSession {
         case "content", "text", "delta", "message":
             let text = data["text"] as? String ?? data["content"] as? String ?? json["text"] as? String ?? ""
             if !text.isEmpty {
-                onText?(text)
+                // Check for delta mode
+                if let role = json["role"] as? String, role == "assistant",
+                   let content = json["content"] as? String {
+                    let isDelta = json["delta"] as? Bool ?? false
+                    if isDelta {
+                        currentResponseText += content
+                        onText?(content)
+                    } else if currentResponseText.isEmpty {
+                        currentResponseText = content
+                        onText?(content)
+                    }
+                } else {
+                    onText?(text)
+                }
             }
 
-        case "tool_call", "function_call":
-            let toolName = data["name"] as? String ?? "Tool"
-            let input = data["input"] as? [String: Any] ?? data["arguments"] as? [String: Any] ?? [:]
-            history.append(AgentMessage(role: .toolUse, text: "\(toolName): \(input["command"] as? String ?? toolName)"))
+        case "tool_call", "function_call", "tool_use":
+            let toolName = data["name"] as? String ?? json["tool_name"] as? String ?? "Tool"
+            // Skip internal skill activation noise
+            if toolName == "activate_skill" { return }
+            let input = data["input"] as? [String: Any] ?? data["arguments"] as? [String: Any] ?? json["parameters"] as? [String: Any] ?? [:]
+            let summary = formatToolSummary(toolName: toolName, params: input)
+            history.append(AgentMessage(role: .toolUse, text: "\(toolName): \(summary)"))
             onToolUse?(toolName, input)
 
         case "tool_result", "function_result":
-            let output = data["output"] as? String ?? data["result"] as? String ?? ""
-            let isError = (data["is_error"] as? Bool) ?? false
+            let output = data["output"] as? String ?? data["result"] as? String ?? (json["output"] as? String) ?? ""
+            let isError = (data["is_error"] as? Bool) ?? (json["status"] as? String == "error")
             let summary = String(output.prefix(80))
             history.append(AgentMessage(role: .toolResult, text: isError ? "ERROR: \(summary)" : summary))
             onToolResult?(summary, isError)
 
-        case "done", "end", "complete", "turn_end":
+        case "done", "end", "complete", "turn_end", "result":
             if isBusy {
                 isBusy = false
                 if let result = json["result"] as? String ?? data["text"] as? String, !result.isEmpty {
                     history.append(AgentMessage(role: .assistant, text: result))
+                } else if !currentResponseText.isEmpty {
+                    history.append(AgentMessage(role: .assistant, text: currentResponseText))
                 }
                 onTurnComplete?()
             }
@@ -233,8 +267,26 @@ class GeminiSession: AgentSession {
         default:
             // Forward any text content we find
             if let text = json["text"] as? String ?? json["content"] as? String, !text.isEmpty {
+                currentResponseText += text
                 onText?(text)
             }
+        }
+    }
+
+    private func formatToolSummary(toolName: String, params: [String: Any]) -> String {
+        switch toolName {
+        case "run_shell_command":
+            return params["command"] as? String ?? ""
+        case "read_file":
+            return params["file_path"] as? String ?? ""
+        case "replace", "write_file":
+            return params["file_path"] as? String ?? ""
+        case "glob":
+            return params["pattern"] as? String ?? ""
+        case "grep_search":
+            return params["pattern"] as? String ?? ""
+        default:
+            return params.keys.sorted().prefix(3).joined(separator: ", ")
         }
     }
 }

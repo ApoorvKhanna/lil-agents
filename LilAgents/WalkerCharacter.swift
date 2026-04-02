@@ -1,8 +1,46 @@
 import AVFoundation
 import AppKit
 
+enum CharacterSize: String, CaseIterable {
+    case big, middle, small
+    var height: CGFloat {
+        switch self {
+        case .big: return 200
+        case .middle: return 150
+        case .small: return 100
+        }
+    }
+    var displayName: String {
+        switch self {
+        case .big: return "Big"
+        case .middle: return "Middle"
+        case .small: return "Small"
+        }
+    }
+}
+
 class WalkerCharacter {
     let videoName: String
+    let name: String
+    var provider: AgentProvider {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "\(name)Provider") ?? "claude"
+            return AgentProvider(rawValue: raw) ?? .claude
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "\(name)Provider")
+        }
+    }
+    var size: CharacterSize {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "\(name)Size") ?? "big"
+            return CharacterSize(rawValue: raw) ?? .big
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "\(name)Size")
+            updateDimensions()
+        }
+    }
     var window: NSWindow!
     var playerLayer: AVPlayerLayer!
     var queuePlayer: AVQueuePlayer!
@@ -10,7 +48,7 @@ class WalkerCharacter {
 
     let videoWidth: CGFloat = 1080
     let videoHeight: CGFloat = 1920
-    let displayHeight: CGFloat = 200
+    private(set) var displayHeight: CGFloat = 200
     var displayWidth: CGFloat { displayHeight * (videoWidth / videoHeight) }
 
     // Walk timing (per-character, from frame analysis)
@@ -59,11 +97,36 @@ class WalkerCharacter {
     private var wasPopoverVisibleBeforeEnvironmentHide = false
     private var wasBubbleVisibleBeforeEnvironmentHide = false
 
-    init(videoName: String) {
+    init(videoName: String, name: String) {
         self.videoName = videoName
+        self.name = name
+        self.displayHeight = size.height
     }
 
     // MARK: - Setup
+
+    func updateDimensions() {
+        displayHeight = size.height
+        let newWidth = displayWidth
+        let newHeight = displayHeight
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let window = self.window else { return }
+            let oldFrame = window.frame
+            let newFrame = CGRect(x: oldFrame.origin.x, y: oldFrame.origin.y, width: newWidth, height: newHeight)
+            
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            window.setFrame(newFrame, display: true)
+            self.playerLayer.frame = CGRect(x: 0, y: 0, width: newWidth, height: newHeight)
+            if let hostView = window.contentView {
+                hostView.frame = CGRect(x: 0, y: 0, width: newWidth, height: newHeight)
+            }
+            CATransaction.commit()
+            
+            self.updateFlip()
+        }
+    }
 
     func setup() {
         guard let videoURL = Bundle.main.url(forResource: videoName, withExtension: "mov") else {
@@ -258,7 +321,7 @@ class WalkerCharacter {
         hideBubble()
 
         if session == nil {
-            let newSession = AgentProvider.current.createSession()
+            let newSession = provider.createSession()
             session = newSession
             wireSession(newSession)
             newSession.start()
@@ -375,7 +438,7 @@ class WalkerCharacter {
         titleBar.layer?.backgroundColor = t.titleBarBg.cgColor
         container.addSubview(titleBar)
 
-        let titleLabel = NSTextField(labelWithString: t.titleString)
+        let titleLabel = NSTextField(labelWithString: t.titleString(for: provider))
         titleLabel.font = t.titleFont
         titleLabel.textColor = t.titleText
         titleLabel.frame = NSRect(x: 12, y: 6, width: popoverWidth - 80, height: 16)
@@ -400,6 +463,7 @@ class WalkerCharacter {
         let terminal = TerminalView(frame: NSRect(x: 0, y: 0, width: popoverWidth, height: popoverHeight - 29))
         terminal.characterColor = characterColor
         terminal.themeOverride = themeOverride
+        terminal.provider = provider
         terminal.autoresizingMask = [.width, .height]
         terminal.onSendMessage = { [weak self] message in
             self?.session?.send(message: message)
@@ -414,7 +478,7 @@ class WalkerCharacter {
         terminalView = terminal
     }
 
-    private func wireSession(_ session: any AgentSession, providerName: String = AgentProvider.current.displayName) {
+    private func wireSession(_ session: any AgentSession) {
         session.onText = { [weak self] text in
             self?.currentStreamingText += text
             self?.terminalView?.appendStreamingText(text)
@@ -441,8 +505,9 @@ class WalkerCharacter {
         }
 
         session.onProcessExit = { [weak self] in
-            self?.terminalView?.endStreaming()
-            self?.terminalView?.appendError("\(providerName) session ended.")
+            guard let self = self else { return }
+            self.terminalView?.endStreaming()
+            self.terminalView?.appendError("\(self.provider.displayName) session ended.")
         }
     }
 
