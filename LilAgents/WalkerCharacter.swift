@@ -2,18 +2,18 @@ import AVFoundation
 import AppKit
 
 enum CharacterSize: String, CaseIterable {
-    case big, middle, small
+    case big, medium, small
     var height: CGFloat {
         switch self {
         case .big: return 200
-        case .middle: return 150
+        case .medium: return 150
         case .small: return 100
         }
     }
     var displayName: String {
         switch self {
         case .big: return "Big"
-        case .middle: return "Middle"
+        case .medium: return "Medium"
         case .small: return "Small"
         }
     }
@@ -441,8 +441,26 @@ class WalkerCharacter {
         let titleLabel = NSTextField(labelWithString: t.titleString(for: provider))
         titleLabel.font = t.titleFont
         titleLabel.textColor = t.titleText
-        titleLabel.frame = NSRect(x: 12, y: 6, width: popoverWidth - 80, height: 16)
+        titleLabel.sizeToFit()
+        titleLabel.frame.origin = NSPoint(x: 12, y: 6)
         titleBar.addSubview(titleLabel)
+
+        let arrowBtn = NSButton(frame: NSRect(x: titleLabel.frame.maxX + 2, y: 5, width: 16, height: 16))
+        arrowBtn.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: "Switch provider")
+        arrowBtn.imageScaling = .scaleProportionallyDown
+        arrowBtn.bezelStyle = .inline
+        arrowBtn.isBordered = false
+        arrowBtn.contentTintColor = t.titleText.withAlphaComponent(0.75)
+        arrowBtn.target = self
+        arrowBtn.action = #selector(showProviderMenu(_:))
+        titleBar.addSubview(arrowBtn)
+
+        // Make the title label clickable too
+        let clickArea = NSButton(frame: NSRect(x: 0, y: 0, width: arrowBtn.frame.maxX + 4, height: 28))
+        clickArea.isTransparent = true
+        clickArea.target = self
+        clickArea.action = #selector(showProviderMenu(_:))
+        titleBar.addSubview(clickArea)
 
         // Copy button in title bar (icon only)
         let copyBtn = NSButton(frame: NSRect(x: popoverWidth - 28, y: 5, width: 16, height: 16))
@@ -509,6 +527,44 @@ class WalkerCharacter {
             self.terminalView?.endStreaming()
             self.terminalView?.appendError("\(self.provider.displayName) session ended.")
         }
+    }
+
+    @objc func showProviderMenu(_ sender: Any) {
+        let menu = NSMenu()
+        let menuFont = NSFont.systemFont(ofSize: 12, weight: .regular)
+        for p in AgentProvider.allCases {
+            let item = NSMenuItem(title: p.displayName, action: #selector(providerMenuItemSelected(_:)), keyEquivalent: "")
+            item.target = self
+            item.attributedTitle = NSAttributedString(string: p.displayName, attributes: [.font: menuFont])
+            item.representedObject = p.rawValue
+            if p == provider {
+                item.state = .on
+            }
+            if !p.isAvailable {
+                item.isEnabled = false
+            }
+            menu.addItem(item)
+        }
+        // Show menu below the title bar area
+        if let titleBar = popoverWindow?.contentView?.subviews.first(where: { $0.frame.origin.y > 0 && $0.frame.height == 28 }) {
+            menu.popUp(positioning: nil, at: NSPoint(x: 10, y: 0), in: titleBar)
+        }
+    }
+
+    @objc func providerMenuItemSelected(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let newProvider = AgentProvider(rawValue: raw),
+              newProvider != provider else { return }
+        provider = newProvider
+        // Terminate existing session and rebuild popover for new provider
+        session?.terminate()
+        session = nil
+        popoverWindow?.orderOut(nil)
+        popoverWindow = nil
+        terminalView = nil
+        thinkingBubbleWindow?.orderOut(nil)
+        thinkingBubbleWindow = nil
+        openPopover()
     }
 
     @objc func copyLastResponseFromButton() {

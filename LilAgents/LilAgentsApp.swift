@@ -51,42 +51,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         soundItem.state = .on
         menu.addItem(soundItem)
 
-        // Agents submenu
-        let agentsItem = NSMenuItem(title: "Agents", action: nil, keyEquivalent: "")
-        let agentsMenu = NSMenu()
-        if let chars = controller?.characters {
-            for (charIdx, char) in chars.enumerated() {
-                let charItem = NSMenuItem(title: char.name, action: nil, keyEquivalent: "")
-                let subMenu = NSMenu()
-                for (provIdx, provider) in AgentProvider.allCases.enumerated() {
-                    let item = NSMenuItem(title: provider.displayName, action: #selector(switchAgentProvider(_:)), keyEquivalent: "")
-                    item.tag = charIdx * 10 + provIdx
-                    item.state = char.provider == provider ? .on : .off
-                    subMenu.addItem(item)
-                }
-                charItem.submenu = subMenu
-                agentsMenu.addItem(charItem)
+        // Provider submenu (applies to all characters)
+        let providerItem = NSMenuItem(title: "Provider", action: nil, keyEquivalent: "")
+        let providerMenu = NSMenu()
+        let currentProvider = controller?.characters.first?.provider ?? .claude
+        for (i, provider) in AgentProvider.allCases.enumerated() {
+            let item = NSMenuItem(title: provider.displayName, action: #selector(switchProvider(_:)), keyEquivalent: "")
+            item.tag = i
+            item.state = provider == currentProvider ? .on : .off
+            if !provider.isAvailable {
+                item.isEnabled = false
             }
+            providerMenu.addItem(item)
         }
-        agentsItem.submenu = agentsMenu
-        menu.addItem(agentsItem)
+        providerItem.submenu = providerMenu
+        menu.addItem(providerItem)
 
-        // Size submenu
+        // Size submenu (applies to all characters)
         let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
         let sizeMenu = NSMenu()
-        if let chars = controller?.characters {
-            for (charIdx, char) in chars.enumerated() {
-                let charItem = NSMenuItem(title: char.name, action: nil, keyEquivalent: "")
-                let subMenu = NSMenu()
-                for (szIdx, size) in CharacterSize.allCases.enumerated() {
-                    let item = NSMenuItem(title: size.displayName, action: #selector(switchCharacterSize(_:)), keyEquivalent: "")
-                    item.tag = charIdx * 10 + szIdx
-                    item.state = char.size == size ? .on : .off
-                    subMenu.addItem(item)
-                }
-                charItem.submenu = subMenu
-                sizeMenu.addItem(charItem)
-            }
+        let currentSize = controller?.characters.first?.size ?? .big
+        for (i, size) in CharacterSize.allCases.enumerated() {
+            let item = NSMenuItem(title: size.displayName, action: #selector(switchCharacterSize(_:)), keyEquivalent: "")
+            item.tag = i
+            item.state = size == currentSize ? .on : .off
+            sizeMenu.addItem(item)
         }
         sizeItem.submenu = sizeMenu
         menu.addItem(sizeItem)
@@ -121,10 +110,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         displayItem.submenu = displayMenu
         menu.addItem(displayItem)
-
-        let debugItem = NSMenuItem(title: "Debug Mode", action: #selector(toggleDebug), keyEquivalent: "d")
-        debugItem.state = .off
-        menu.addItem(debugItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -174,55 +159,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc func switchAgentProvider(_ sender: NSMenuItem) {
-        let tag = sender.tag
-        let charIdx = tag / 10
-        let provIdx = tag % 10
+    @objc func switchProvider(_ sender: NSMenuItem) {
+        let idx = sender.tag
         let allProviders = AgentProvider.allCases
-        
-        guard let chars = controller?.characters, charIdx < chars.count, provIdx < allProviders.count else { return }
-        let char = chars[charIdx]
-        let newProvider = allProviders[provIdx]
-        
-        if char.provider == newProvider { return }
-        char.provider = newProvider
+        guard idx < allProviders.count else { return }
+        let newProvider = allProviders[idx]
 
-        if let subMenu = sender.menu {
-            for item in subMenu.items {
-                item.state = item.tag == tag ? .on : .off
+        controller?.characters.forEach { char in
+            if char.provider == newProvider { return }
+            char.provider = newProvider
+            char.session?.terminate()
+            char.session = nil
+            char.popoverWindow?.orderOut(nil)
+            char.popoverWindow = nil
+            char.terminalView = nil
+            char.thinkingBubbleWindow?.orderOut(nil)
+            char.thinkingBubbleWindow = nil
+        }
+
+        if let providerMenu = sender.menu {
+            for item in providerMenu.items {
+                item.state = item.tag == idx ? .on : .off
             }
         }
-
-        // Terminate existing session and clear UI for this character only
-        char.session?.terminate()
-        char.session = nil
-        if char.isIdleForPopover {
-            char.closePopover()
-        }
-        // Clear UI so it rebuilds with new provider title/placeholder
-        char.popoverWindow?.orderOut(nil)
-        char.popoverWindow = nil
-        char.terminalView = nil
-        char.thinkingBubbleWindow?.orderOut(nil)
-        char.thinkingBubbleWindow = nil
     }
 
     @objc func switchCharacterSize(_ sender: NSMenuItem) {
-        let tag = sender.tag
-        let charIdx = tag / 10
-        let szIdx = tag % 10
+        let idx = sender.tag
         let allSizes = CharacterSize.allCases
-        
-        guard let chars = controller?.characters, charIdx < chars.count, szIdx < allSizes.count else { return }
-        let char = chars[charIdx]
-        let newSize = allSizes[szIdx]
-        
-        if char.size == newSize { return }
-        char.size = newSize
+        guard idx < allSizes.count else { return }
+        let newSize = allSizes[idx]
 
-        if let subMenu = sender.menu {
-            for item in subMenu.items {
-                item.state = item.tag == tag ? .on : .off
+        controller?.characters.forEach { $0.size = newSize }
+
+        if let sizeMenu = sender.menu {
+            for item in sizeMenu.items {
+                item.state = item.tag == idx ? .on : .off
             }
         }
     }
@@ -258,17 +230,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sender.state = .off
         } else {
             char.setManuallyVisible(true)
-            sender.state = .on
-        }
-    }
-
-    @objc func toggleDebug(_ sender: NSMenuItem) {
-        guard let debugWin = controller?.debugWindow else { return }
-        if debugWin.isVisible {
-            debugWin.orderOut(nil)
-            sender.state = .off
-        } else {
-            debugWin.orderFrontRegardless()
             sender.state = .on
         }
     }
