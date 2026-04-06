@@ -2,8 +2,6 @@ import AVFoundation
 import CoreMedia
 import ScreenCaptureKit
 
-// Captures system audio output (Spotify, YouTube, etc.) via ScreenCaptureKit
-// and fires onBeat on detected amplitude onsets.
 class BeatDetector: NSObject {
     var onBeat: (() -> Void)?
 
@@ -11,6 +9,7 @@ class BeatDetector: NSObject {
     private var rmsHistory: [Float] = []
     private var lastBeatTime: TimeInterval = 0
     private let minBeatInterval: TimeInterval = 0.25
+    private var bufferCount = 0
 
     func start() {
         Task { await startStream() }
@@ -23,15 +22,20 @@ class BeatDetector: NSObject {
     }
 
     private func startStream() async {
+        print("[BeatDetector] starting...")
+
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first else { return }
+            guard let display = content.displays.first else {
+                print("[BeatDetector] no display found")
+                return
+            }
+            print("[BeatDetector] got display: \(display)")
 
             let config = SCStreamConfiguration()
             config.capturesAudio = true
             config.excludesCurrentProcessAudioFromCapture = true
-            // Minimal video — we only care about audio
             config.width = 2
             config.height = 2
             config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
@@ -42,14 +46,21 @@ class BeatDetector: NSObject {
                 exceptingWindows: []
             )
 
-            let s = SCStream(filter: filter, configuration: config, delegate: nil)
+            let s = SCStream(filter: filter, configuration: config, delegate: self)
             try s.addStreamOutput(self, type: .audio,
                                   sampleHandlerQueue: .global(qos: .userInteractive))
             try await s.startCapture()
             stream = s
+            print("[BeatDetector] stream started OK")
         } catch {
-            print("BeatDetector: \(error)")
+            print("[BeatDetector] ERROR: \(error)")
         }
+    }
+}
+
+extension BeatDetector: SCStreamDelegate {
+    func stream(_ stream: SCStream, didStopWithError error: any Error) {
+        print("[BeatDetector] stream stopped with error: \(error)")
     }
 }
 
@@ -59,28 +70,53 @@ extension BeatDetector: SCStreamOutput {
                 of type: SCStreamOutputType) {
         guard type == .audio else { return }
 
-        // Pull raw Float32 PCM samples out of the CMSampleBuffer
+        // Get required buffer list size first
+        var audioListSize = 0
+        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer, bufferListSizeNeededOut: &audioListSize,
+            bufferListOut: nil, bufferListSize: 0,
+            blockBufferAllocator: nil, blockBufferMemoryAllocator: nil,
+            flags: 0, blockBufferOut: nil)
+
+        guard audioListSize > 0 else { return }
+
+        // Allocate correctly-sized buffer list
+        let rawPtr = UnsafeMutableRawPointer.allocate(
+            byteCount: audioListSize,
+            alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { rawPtr.deallocate() }
+
         var blockBuffer: CMBlockBuffer?
-        var audioList = AudioBufferList()
         let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sampleBuffer,
-            bufferListSizeNeededOut: nil,
-            bufferListOut: &audioList,
-            bufferListSize: MemoryLayout<AudioBufferList>.size,
-            blockBufferAllocator: nil,
-            blockBufferMemoryAllocator: nil,
+            sampleBuffer, bufferListSizeNeededOut: nil,
+            bufferListOut: rawPtr.assumingMemoryBound(to: AudioBufferList.self),
+            bufferListSize: audioListSize,
+            blockBufferAllocator: nil, blockBufferMemoryAllocator: nil,
             flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-            blockBufferOut: &blockBuffer
-        )
-        guard status == noErr, let data = audioList.mBuffers.mData else { return }
+            blockBufferOut: &blockBuffer)
 
-        let count = Int(audioList.mBuffers.mDataByteSize) / MemoryLayout<Float>.size
-        guard count > 0 else { return }
+        guard status == noErr else { return }
 
-        let samples = data.assumingMemoryBound(to: Float.self)
+        // Sum RMS across all buffers/channels
+        let bufferList = UnsafeMutableAudioBufferListPointer(
+            rawPtr.assumingMemoryBound(to: AudioBufferList.self))
         var sum: Float = 0
-        for i in 0..<count { sum += samples[i] * samples[i] }
-        let rms = sqrt(sum / Float(count))
+        var totalCount = 0
+        for buf in bufferList {
+            guard let data = buf.mData else { continue }
+            let count = Int(buf.mDataByteSize) / MemoryLayout<Float>.size
+            let samples = data.assumingMemoryBound(to: Float.self)
+            for i in 0..<count { sum += samples[i] * samples[i] }
+            totalCount += count
+        }
+        guard totalCount > 0 else { return }
+        let rms = sqrt(sum / Float(totalCount))
+
+        // Log first few buffers so we can confirm audio is arriving
+        bufferCount += 1
+        if bufferCount <= 5 {
+            print("[BeatDetector] buffer \(bufferCount): rms=\(rms)")
+        }
 
         rmsHistory.append(rms)
         if rmsHistory.count > 43 { rmsHistory.removeFirst() }
@@ -89,6 +125,7 @@ extension BeatDetector: SCStreamOutput {
         let now = CACurrentMediaTime()
         if rms > max(avg * 1.6, 0.002) && now - lastBeatTime > minBeatInterval {
             lastBeatTime = now
+            print("[BeatDetector] BEAT rms=\(rms) avg=\(avg)")
             DispatchQueue.main.async { [weak self] in self?.onBeat?() }
         }
     }
