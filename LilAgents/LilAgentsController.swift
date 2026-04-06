@@ -49,6 +49,7 @@ class LilAgentsController {
     var pinnedScreenIndex: Int = -1
     private static let onboardingKey = "hasCompletedOnboarding"
     private var isHiddenForEnvironment = false
+    private let beatDetector = BeatDetector()
 
     func start() {
         // Pick 2 random configs (without repetition) from the pool
@@ -82,10 +83,29 @@ class LilAgentsController {
 
         setupDebugLine()
         startDisplayLink()
+        startBeatDetector()
 
         if !UserDefaults.standard.bool(forKey: Self.onboardingKey) {
             triggerOnboarding()
         }
+    }
+
+    private func startBeatDetector() {
+        beatDetector.onBeat = { [weak self] in
+            guard let self else { return }
+            // Stagger the bounce slightly so they don't jump in perfect sync
+            for (i, char) in self.characters.enumerated() {
+                let delay = Double(i) * 0.04
+                if delay == 0 {
+                    char.triggerBounce()
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        char.triggerBounce()
+                    }
+                }
+            }
+        }
+        beatDetector.start()
     }
 
     private func triggerOnboarding() {

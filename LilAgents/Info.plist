@@ -12,5 +12,7 @@
     <true/>
     <key>SUAllowsAutomaticUpdates</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Lil Agents listens for music beats to bob along to the rhythm.</string>
 </dict>
 </plist>

@@ -59,6 +59,10 @@ class WalkerCharacter {
     private var lastSignQuoteUpdate: CFTimeInterval = 0
     private var shuffledQuotes: [String] = WalkerCharacter.signBoardQuotes.shuffled()
     private var quoteIndex: Int = 0
+    // Beat bounce
+    var bounceY: CGFloat = 0
+    private var bounceVelocity: CGFloat = 0
+
     private(set) var isManuallyVisible = true
     private var environmentHiddenAt: CFTimeInterval?
     private var wasPopoverVisibleBeforeEnvironmentHide = false
@@ -780,6 +784,22 @@ class WalkerCharacter {
         }
     }
 
+    // MARK: - Beat Bounce
+
+    func triggerBounce() {
+        bounceVelocity = -14
+    }
+
+    private func tickBounce() {
+        guard bounceY != 0 || bounceVelocity != 0 else { return }
+        bounceVelocity += 1.1  // gravity
+        bounceY += bounceVelocity
+        if bounceY >= 0 {
+            bounceY = 0
+            bounceVelocity = 0
+        }
+    }
+
     private func hideSignBoard() {
         if signBoardWindow?.isVisible ?? false {
             signBoardWindow?.orderOut(nil)
@@ -923,12 +943,13 @@ class WalkerCharacter {
     // MARK: - Frame Update
 
     func update(dockX: CGFloat, dockWidth: CGFloat, dockTopY: CGFloat) {
+        tickBounce()
         currentTravelDistance = max(dockWidth - displayWidth, 0)
         if isIdleForPopover {
             let travelDistance = currentTravelDistance
             let x = dockX + travelDistance * positionProgress + currentFlipCompensation
             let bottomPadding = displayHeight * 0.15
-            let y = dockTopY - bottomPadding + yOffset
+            let y = dockTopY - bottomPadding + yOffset + bounceY
             window.setFrameOrigin(NSPoint(x: x, y: y))
             updatePopoverPosition()
             updateThinkingBubble()
@@ -944,7 +965,7 @@ class WalkerCharacter {
                 let travelDistance = max(dockWidth - displayWidth, 0)
                 let x = dockX + travelDistance * positionProgress + currentFlipCompensation
                 let bottomPadding = displayHeight * 0.15
-                let y = dockTopY - bottomPadding + yOffset
+                let y = dockTopY - bottomPadding + yOffset + bounceY
                 window.setFrameOrigin(NSPoint(x: x, y: y))
                 return
             }
@@ -972,7 +993,7 @@ class WalkerCharacter {
 
             let x = dockX + travelDistance * positionProgress + currentFlipCompensation
             let bottomPadding = displayHeight * 0.15
-            let y = dockTopY - bottomPadding + yOffset
+            let y = dockTopY - bottomPadding + yOffset + bounceY
             window.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
