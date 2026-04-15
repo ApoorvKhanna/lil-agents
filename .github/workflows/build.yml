@@ -1,0 +1,52 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+
+      - name: Build release archive
+        run: |
+          xcodebuild archive \
+            -project lil-agents.xcodeproj \
+            -scheme LilAgents \
+            -configuration Release \
+            -archivePath build/LilAgents.xcarchive \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Export app
+        run: |
+          mkdir -p build/export
+          cp -R build/LilAgents.xcarchive/Products/Applications/*.app build/export/
+
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "Lil Agents" \
+            -srcfolder build/export \
+            -ov -format UDZO \
+            build/LilAgents.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LilAgents.dmg
+          path: build/LilAgents.dmg
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/LilAgents.dmg
+          generate_release_notes: true
