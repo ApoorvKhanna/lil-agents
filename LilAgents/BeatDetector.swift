@@ -35,7 +35,7 @@ class BeatDetector: NSObject {
 
             let config = SCStreamConfiguration()
             config.capturesAudio = true
-            config.excludesCurrentProcessAudioFromCapture = true
+            config.excludesCurrentProcessAudio = true
             config.width = 2
             config.height = 2
             config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
