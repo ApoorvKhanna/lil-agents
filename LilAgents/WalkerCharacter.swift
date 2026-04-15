@@ -695,12 +695,18 @@ class WalkerCharacter {
     // MARK: - Sign Board
 
     private static let signBoardQuotes: [String] = {
-        if let url = Bundle.main.url(forResource: "quotes", withExtension: "json"),
-           let data = try? Data(contentsOf: url),
-           let quotes = try? JSONDecoder().decode([String].self, from: data),
-           !quotes.isEmpty {
-            return quotes
+        let url = Bundle.main.url(forResource: "quotes", withExtension: "json")
+        print("[Quotes] bundle url: \(url?.path ?? "nil")")
+        if let url,
+           let data = try? Data(contentsOf: url) {
+            print("[Quotes] loaded \(data.count) bytes")
+            if let quotes = try? JSONDecoder().decode([String].self, from: data),
+               !quotes.isEmpty {
+                print("[Quotes] decoded \(quotes.count) quotes")
+                return quotes
+            }
         }
+        print("[Quotes] falling back to hardcoded list")
         return [
             "Men's public restrooms are laid out all wrong. It should be urinal, stall, urinal, stall instead of urinal, urinal, urinal, stall, stall.",
             "The 'richest people' list is actually the 'legally richest people' list, which is only close to the actual richest people list.",
